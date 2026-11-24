@@ -1,0 +1,68 @@
+# ============================================================================
+# parallel-rsync-git 配置示例：把一个仓库同步到多台机器
+#
+# 用法：
+#   parallel-rsync-git --report                  # 先看计划（不连远端）
+#   parallel-rsync-git --dry-run                 # 预演
+#   parallel-rsync-git                           # 真正执行
+#   parallel-rsync-git -c ~/path/to/this.yml
+#
+# 方向：本地 -> 远端（本地仓库是唯一真源）。
+#       若要把远端改动拉回本地，把对应 group 的 src / dest 对调即可。
+# ============================================================================
+
+workers: 4          # 同时最多跑 4 个 rsync
+max_per_host: 2     # 同一台机器最多并发 2 个
+
+# 远端只接收新增和更新，不做任何删除 —— 各台机器自己训出来的 checkpoint、
+# 自己攒的运行产物、远端独有的代码，全都原样留在远端。
+# （写成 true 才会启用 --delete；那时 .gitignore 的规则会自动接管保护，
+#   被 git 忽略的路径即使远端有也不会被删掉。）
+delete: false
+
+global_options:
+  - "-avz"                    # 归档 + 详细 + 压缩（跨公网传输，代码文本压缩率高）
+  - "--partial"               # 断点续传，中断后重跑更快
+  - "--timeout=1800"          # 30 分钟没有任何进展就中断，避免把任务挂死
+  - "--exclude=__pycache__/"  # 以下是本地生成的垃圾，不需要同步
+  - "--exclude=*.pyc"
+  - "--exclude=.pytest_cache/"
+  - "--exclude=*.egg-info/"
+  - "--exclude=.DS_Store"
+
+# ---------------------------------------------------------------------------
+# gitignore：让同步认得仓库的 .gitignore
+#
+#   · 本地被 git 忽略的东西（models/、dataset/、outputs/、__pycache__ …）
+#     不往远端搬；
+#   · 远端各台机器自己训出来的 checkpoint、自己攒的运行产物不会被 --delete
+#     删掉 —— 各机 model 保持独立；
+#   · 本地改了还没提交、但没被忽略的新代码照常同步。
+#
+# 认得的规则：根目录和任意层级的 .gitignore、.git/info/exclude、
+# 全局 core.excludesFile、子模块各自的 .gitignore、以及 ! 取反。
+# ---------------------------------------------------------------------------
+gitignore:
+  enabled: true            # 总开关
+  mode: exclude            # exclude（默认）/ tracked（只同步 git 已跟踪的文件）
+  include_git_dir: false   # 不同步 .git 目录 —— 保住各机自己的提交记录
+  submodules: true         # 子模块自己的 .gitignore 也生效
+  extra_files: []          # 额外的忽略规则文件（相对源目录），gitignore 语法
+  force_include: []        # 即使被 git 忽略也要同步的路径（相对源目录）
+  delete_excluded: false   # 不删远端被忽略的文件（默认 false，保持各机 model 独立）
+  required: false          # 源目录不在 git 仓库里时不报错
+
+groups:
+  - name: "gpu-01"
+    src: "/home/you/projects/myrepo"
+    dest: "gpu-01:/data/shared/myrepo"
+
+  - name: "gpu-02"
+    src: "/home/you/projects/myrepo"
+    dest: "gpu-02:/data/shared/myrepo"
+
+  - name: "gpu-03"
+    src: "/home/you/projects/myrepo"
+    dest: "gpu-03:/data/shared/myrepo"
+    options:
+      - "--mkpath"             # 远端还没有这个目录时，让 rsync 自己建
