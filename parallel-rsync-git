@@ -1,0 +1,20 @@
+#!/bin/sh
+# parallel-rsync-git —— 给 parallel-rsync 接上 git（POSIX 启动器）
+# 用法：parallel-rsync-git [--report|--dry-run|--builtin] [-c config.yml]
+set -e
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT="$DIR/parallel_rsync_git.py"
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "错误：找不到 $SCRIPT" >&2
+    exit 1
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 "$SCRIPT" "$@"
+elif command -v python >/dev/null 2>&1; then
+    exec python "$SCRIPT" "$@"
+else
+    echo "错误：找不到 python（装 python3 即可）" >&2
+    exit 1
+fi
